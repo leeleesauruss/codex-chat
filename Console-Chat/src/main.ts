@@ -110,7 +110,8 @@ const createWindow = () => {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
 
-      while (true) {
+      // Use `for (;;)` instead of `while (true)` to satisfy `no-constant-condition`.
+      for (;;) {
         const { done, value } = await reader.read();
         if (done) {
           window.webContents.send('stream-end');
@@ -148,7 +149,8 @@ const createWindow = () => {
       const decoder = new TextDecoder();
       let buffer = '';
 
-      while (true) {
+      // Use `for (;;)` instead of `while (true)` to satisfy `no-constant-condition`.
+      for (;;) {
           const { done, value } = await reader.read();
           if (done) {
               window.webContents.send('stream-end');
