@@ -42,9 +42,22 @@ function App() {
 
   // React to theme changes without re-loading settings.
   useEffect(() => {
+    const themeSource = selectedTheme ? 'obsidian' : 'builtin';
     document.documentElement.setAttribute('data-bs-theme', themeMode === 'dark' ? 'dark' : 'light');
     document.documentElement.dataset.themeMode = themeMode;
     document.documentElement.dataset.themeName = selectedTheme?.slug ?? 'ui-default';
+    document.documentElement.dataset.themeSource = themeSource;
+    document.body.dataset.themeMode = themeMode;
+    document.body.dataset.themeName = selectedTheme?.slug ?? 'ui-default';
+    document.body.dataset.themeSource = themeSource;
+
+    // Many Obsidian themes scope variables under `.theme-dark` / `.theme-light`.
+    // Mirror those classes so the injected `obsidian.css` can actually affect our UI.
+    const root = document.documentElement;
+    root.classList.toggle('theme-dark', themeMode === 'dark');
+    root.classList.toggle('theme-light', themeMode === 'light');
+    document.body.classList.toggle('theme-dark', themeMode === 'dark');
+    document.body.classList.toggle('theme-light', themeMode === 'light');
   }, [themeMode, selectedTheme]);
 
   // Dynamically load Obsidian community CSS when a catalog theme is selected.

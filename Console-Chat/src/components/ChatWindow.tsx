@@ -35,6 +35,12 @@ export function ChatWindow() {
   const sendMessage = useAppStore(selectSendMessage);
   
   const bottomRef = useRef<null | HTMLDivElement>(null);
+  const selectedProvider = apiProviders.find((p) => p.name === selectedModel);
+  const engineeredSendLabel = selectedProvider
+    ? `Send with ${selectedProvider.name}`
+    : selectedModel
+      ? `Send with Ollama (${selectedModel})`
+      : 'Send';
 
   useEffect(() => {
     // Scroll to the bottom on new message
@@ -66,7 +72,7 @@ export function ChatWindow() {
   return (
     <div className="d-flex flex-column h-100">
       {/* Model Indicator Header */}
-      <div className="p-2 bg-body-tertiary border-bottom d-flex align-items-center justify-content-center gap-2 sticky-top">
+      <div className="p-2 chat-model-header border-bottom d-flex align-items-center justify-content-center gap-2 sticky-top">
         <span className="small fw-bold text-muted">Model:</span>
         <Form.Select 
             size="sm" 
@@ -110,13 +116,13 @@ export function ChatWindow() {
                    >
                      Copy
                    </Button>
-                   <Button 
+                  <Button 
                       variant="success" 
                       size="sm" 
                       onClick={() => handleRun(engineeredPrompt)}
                       disabled={streaming}
                    >
-                     Run with Ollama
+                     {engineeredSendLabel}
                    </Button>
                 </Card.Footer>
               )}

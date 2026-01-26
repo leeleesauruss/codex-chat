@@ -1,83 +1,117 @@
 :root {
-  --app-bg: #f8fafc;
-  --panel-bg: #ffffff;
-  --sidebar-bg: #f1f5f9;
-  --chat-bg: #fefefe;
-  --panel-border: rgba(15, 23, 42, 0.08);
-  --text-main: #0f172a;
-  --text-muted: #475569;
-  --accent: #7c3aed;
-  --input-bg: #ffffff;
-  --muted-surface: #f1f5f9;
-  --code-bg: #0f172a0a;
+  /* Base palette (light). Keep these separate so we can safely alias to Obsidian variables. */
+  --cc-app-bg-base: #f8fafc;
+  --cc-panel-bg-base: #ffffff;
+  --cc-sidebar-bg-base: #f1f5f9;
+  --cc-chat-bg-base: #fefefe;
+  --cc-panel-border-base: rgba(15, 23, 42, 0.08);
+  --cc-text-main-base: #0f172a;
+  --cc-text-muted-base: #475569;
+  --cc-accent-base: #7c3aed;
+  --cc-input-bg-base: #ffffff;
+  --cc-muted-surface-base: #f1f5f9;
+  --cc-code-bg-base: #0f172a0a;
+
+  /* App variables default to the base palette. */
+  --cc-app-bg: var(--cc-app-bg-base);
+  --cc-panel-bg: var(--cc-panel-bg-base);
+  --cc-sidebar-bg: var(--cc-sidebar-bg-base);
+  --cc-chat-bg: var(--cc-chat-bg-base);
+  --cc-panel-border: var(--cc-panel-border-base);
+  --cc-text-main: var(--cc-text-main-base);
+  --cc-text-muted: var(--cc-text-muted-base);
+  --cc-accent: var(--cc-accent-base);
+  --cc-input-bg: var(--cc-input-bg-base);
+  --cc-muted-surface: var(--cc-muted-surface-base);
+  --cc-code-bg: var(--cc-code-bg-base);
 }
 
 :root[data-theme-mode='dark'] {
-  --app-bg: #040712;
-  --panel-bg: #0f172a;
-  --sidebar-bg: #0b1220;
-  --chat-bg: #111827;
-  --panel-border: rgba(148, 163, 184, 0.3);
-  --text-main: #e2e8f0;
-  --text-muted: #94a3b8;
-  --accent: #a855f7;
-  --input-bg: #0b1220;
-  --muted-surface: #0f172a;
-  --code-bg: #0f172a;
+  --cc-app-bg-base: #040712;
+  --cc-panel-bg-base: #0f172a;
+  --cc-sidebar-bg-base: #0b1220;
+  --cc-chat-bg-base: #111827;
+  --cc-panel-border-base: rgba(148, 163, 184, 0.3);
+  --cc-text-main-base: #e2e8f0;
+  --cc-text-muted-base: #94a3b8;
+  --cc-accent-base: #a855f7;
+  --cc-input-bg-base: #0b1220;
+  --cc-muted-surface-base: #0f172a;
+  --cc-code-bg-base: #0f172a;
 }
 
 :root[data-theme-name='catppuccin'] {
-  --panel-bg: #1e1b2a;
-  --sidebar-bg: #161222;
-  --chat-bg: #15121f;
-  --accent: #f5c2e7;
+  --cc-panel-bg-base: #1e1b2a;
+  --cc-sidebar-bg-base: #161222;
+  --cc-chat-bg-base: #15121f;
+  --cc-accent-base: #f5c2e7;
 }
 
 :root[data-theme-name='rose-pine'] {
-  --panel-bg: #202234;
-  --sidebar-bg: #151526;
-  --chat-bg: #141325;
-  --accent: #f2a4ff;
+  --cc-panel-bg-base: #202234;
+  --cc-sidebar-bg-base: #151526;
+  --cc-chat-bg-base: #141325;
+  --cc-accent-base: #f2a4ff;
 }
 
 :root[data-theme-name='dracula'] {
-  --panel-bg: #1f1f2b;
-  --chat-bg: #151524;
-  --accent: #ff79c6;
+  --cc-panel-bg-base: #1f1f2b;
+  --cc-chat-bg-base: #151524;
+  --cc-accent-base: #ff79c6;
 }
 
 :root[data-theme-name='nord'] {
-  --accent: #8fbcbb;
+  --cc-accent-base: #8fbcbb;
+}
+
+/*
+  When a catalog (Obsidian) theme is selected we inject its obsidian.css.
+  Most themes define a standard set of CSS variables (e.g. --background-primary, --text-normal).
+  We map our app palette variables onto those so *any* Obsidian theme changes the UI.
+*/
+:root[data-theme-source='obsidian'],
+body[data-theme-source='obsidian'] {
+  --cc-app-bg: var(--background-primary, var(--cc-app-bg-base));
+  --cc-panel-bg: var(--background-secondary, var(--cc-panel-bg-base));
+  --cc-sidebar-bg: var(--background-secondary-alt, var(--cc-sidebar-bg-base));
+  --cc-chat-bg: var(--background-primary, var(--cc-chat-bg-base));
+  --cc-panel-border: var(--background-modifier-border, var(--cc-panel-border-base));
+  --cc-text-main: var(--text-normal, var(--cc-text-main-base));
+  --cc-text-muted: var(--text-muted, var(--cc-text-muted-base));
+  --cc-accent: var(--interactive-accent, var(--cc-accent-base));
+  --cc-input-bg: var(--background-primary, var(--cc-input-bg-base));
+  --cc-muted-surface: var(--background-secondary, var(--cc-muted-surface-base));
+  --cc-code-bg: var(--code-background, var(--cc-code-bg-base));
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--app-bg);
-  color: var(--text-main);
+  background: var(--cc-app-bg);
+  color: var(--cc-text-main);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 .app-shell {
   min-height: 100vh;
-  background: var(--app-bg);
+  background: var(--cc-app-bg);
 }
 
 .app-header {
-  background: var(--panel-bg);
-  color: var(--text-main);
-  border-bottom: 1px solid var(--panel-border);
+  background: var(--cc-panel-bg);
+  color: var(--cc-text-main);
+  border-bottom: 1px solid var(--cc-panel-border);
 }
 
 .app-sidebar {
-  background: var(--sidebar-bg);
-  border-right: 1px solid var(--panel-border);
-  color: var(--text-main);
+  background: var(--cc-sidebar-bg);
+  border-right: 1px solid var(--cc-panel-border);
+  color: var(--cc-text-main);
 }
 
 .app-main {
-  background: var(--chat-bg);
-  color: var(--text-main);
+  background: var(--cc-chat-bg);
+  color: var(--cc-text-main);
 }
 
 .app-content {
@@ -93,6 +127,12 @@ h1 {
   font-size: 1.6rem;
 }
 
+.chat-model-header {
+  background: var(--cc-panel-bg);
+  color: var(--cc-text-main);
+  border-color: var(--cc-panel-border);
+}
+
 .theme-browser-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -100,9 +140,9 @@ h1 {
 }
 
 .theme-card {
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--cc-panel-border);
   border-radius: 0.75rem;
-  background: var(--panel-bg);
+  background: var(--cc-panel-bg);
   padding: 0.85rem;
   display: flex;
   flex-direction: column;
@@ -116,7 +156,7 @@ h1 {
 }
 
 .theme-card-active {
-  box-shadow: 0 0 0 2px var(--accent) inset;
+  box-shadow: 0 0 0 2px var(--cc-accent) inset;
 }
 
 .theme-card h6 {
@@ -143,36 +183,36 @@ h1 {
 }
 
 .chat-input-panel {
-  background: var(--panel-bg);
-  border-top: 1px solid var(--panel-border);
-  color: var(--text-main);
+  background: var(--cc-panel-bg);
+  border-top: 1px solid var(--cc-panel-border);
+  color: var(--cc-text-main);
 }
 
 .chat-input-panel textarea,
 .chat-input-panel input,
 .chat-input-panel select {
-  background: var(--input-bg);
-  color: var(--text-main);
+  background: var(--cc-input-bg);
+  color: var(--cc-text-main);
 }
 
 .message-card {
-  background: var(--panel-bg);
-  color: var(--text-main);
-  border: 1px solid var(--panel-border);
+  background: var(--cc-panel-bg);
+  color: var(--cc-text-main);
+  border: 1px solid var(--cc-panel-border);
 }
 
 .message-assistant {
-  background: var(--muted-surface);
+  background: var(--cc-muted-surface);
 }
 
 .message-user {
-  background: linear-gradient(135deg, var(--accent), #5b21b6);
+  background: linear-gradient(135deg, var(--cc-accent), #5b21b6);
   color: #fff;
   border: none;
 }
 
 .message-card pre {
-  background: var(--code-bg);
+  background: var(--cc-code-bg);
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
 }
