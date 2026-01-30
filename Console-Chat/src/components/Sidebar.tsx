@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, Nav, Accordion, Stack, Modal, Form } from 'react-bootstrap';
+import { Button, Stack, Modal, Form } from 'react-bootstrap';
 import { useAppStore } from '../store';
 import { Folder as FolderIcon, ChatLeftText, Trash, PencilSquare, FolderPlus, PlusCircle } from 'react-bootstrap-icons';
 

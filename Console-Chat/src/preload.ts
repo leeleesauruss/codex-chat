@@ -20,17 +20,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Subscribe to streaming events; returns an unsubscribe fn for React effects.
    */
   onStreamChunk: (callback: (chunk: string) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, chunk: string) => callback(chunk);
+    const handler = (event: Electron.IpcRendererEvent, chunk: string) => {
+      void event;
+      callback(chunk);
+    };
     ipcRenderer.on('stream-chunk', handler);
     return () => ipcRenderer.off('stream-chunk', handler);
   },
   onStreamEnd: (callback: () => void) => {
-    const handler = (_event: Electron.IpcRendererEvent) => callback();
+    const handler = (event: Electron.IpcRendererEvent) => {
+      void event;
+      callback();
+    };
     ipcRenderer.on('stream-end', handler);
     return () => ipcRenderer.off('stream-end', handler);
   },
   onStreamError: (callback: (error: string) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, error: string) => callback(error);
+    const handler = (event: Electron.IpcRendererEvent, error: string) => {
+      void event;
+      callback(error);
+    };
     ipcRenderer.on('stream-error', handler);
     return () => ipcRenderer.off('stream-error', handler);
   },

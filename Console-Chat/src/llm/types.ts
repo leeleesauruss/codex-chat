@@ -64,11 +64,21 @@ export interface OptimizationResult {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
   sources?: RagResult[];
   images?: ImageAttachment[];
+}
+
+export interface ChatSettings {
+  systemPrompt: string;
+  temperature: number | null;
+  maxTokens: number | null;
+  topP: number | null;
+  seed: number | null;
+  stopSequences: string[];
+  modelOverride: string | null;
 }
 
 export interface RagResult {
@@ -92,6 +102,7 @@ export interface ChatSession {
   createdAt: number;
   updatedAt: number;
   modelUsed?: string;
+  settings?: ChatSettings;
 }
 
 export interface Folder {

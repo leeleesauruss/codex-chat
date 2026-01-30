@@ -1,30 +1,62 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useAppStore } from '../store';
-import { ChatMessage, RagResult, ImageAttachment } from '../llm/types';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useAppStore, AppState } from '../store';
+import { ChatMessage, RagResult, ImageAttachment, ChatSettings } from '../llm/types';
 import { Card, Button, Form } from 'react-bootstrap';
 import ReactMarkdown from 'react-markdown';
 import { shallow } from 'zustand/shallow';
+import { ChatSettingsModal } from './ChatSettingsModal';
 
 const emptyMessages: ChatMessage[] = [];
 const MAX_SNIPPET_CHARS = 400;
 
-const selectCurrentChatId = (state: any) => state.currentChatId;
-const selectStreaming = (state: any) => state.streaming;
-const selectSelectedModel = (state: any) => state.selectedModel;
-const selectOllamaModels = (state: any) => state.ollamaModels;
-const selectApiProviders = (state: any) => state.settings.providers;
-const selectRag = (state: any) => state.rag;
-const selectSetSelectedModel = (state: any) => state.setSelectedModel;
-const selectSendMessage = (state: any) => state.sendMessage;
-const selectFetchOllamaModels = (state: any) => state.fetchOllamaModels;
+const selectCurrentChatId = (state: AppState) => state.currentChatId;
+const selectStreaming = (state: AppState) => state.streaming;
+const selectSelectedModel = (state: AppState) => state.selectedModel;
+const selectOllamaModels = (state: AppState) => state.ollamaModels;
+const selectApiProviders = (state: AppState) => state.settings.providers;
+const selectRag = (state: AppState) => state.rag;
+const selectSetSelectedModel = (state: AppState) => state.setSelectedModel;
+const selectSendMessage = (state: AppState) => state.sendMessage;
+const selectFetchOllamaModels = (state: AppState) => state.fetchOllamaModels;
+const selectUpdateChatSettings = (state: AppState) => state.updateChatSettings;
 
 export function ChatWindow() {
   const currentChatId = useAppStore(selectCurrentChatId);
+  const chatSettings = useAppStore(
+    useCallback(
+      (state: AppState) => {
+        if (!currentChatId) {
+          return {
+            systemPrompt: '',
+            temperature: null,
+            maxTokens: null,
+            topP: null,
+            seed: null,
+            stopSequences: [],
+            modelOverride: null,
+          } as ChatSettings;
+        }
+        return (
+          state.chats.find((c) => c.id === currentChatId)?.settings || {
+            systemPrompt: '',
+            temperature: null,
+            maxTokens: null,
+            topP: null,
+            seed: null,
+            stopSequences: [],
+            modelOverride: null,
+          }
+        );
+      },
+      [currentChatId],
+    ),
+    shallow,
+  );
   const messages = useAppStore(
-    React.useCallback(
-      (state) => {
+    useCallback(
+      (state: AppState) => {
         if (!currentChatId) return emptyMessages;
-        return state.chats.find((c: any) => c.id === currentChatId)?.messages ?? emptyMessages;
+        return state.chats.find((c) => c.id === currentChatId)?.messages ?? emptyMessages;
       },
       [currentChatId],
     ),
@@ -37,9 +69,15 @@ export function ChatWindow() {
   const rag = useAppStore(selectRag);
   const setSelectedModel = useAppStore(selectSetSelectedModel);
   const sendMessage = useAppStore(selectSendMessage);
+  const updateChatSettings = useAppStore(selectUpdateChatSettings);
   
   const bottomRef = useRef<null | HTMLDivElement>(null);
   const selectedProvider = apiProviders.find((p) => p.name === selectedModel);
+  const globalModelLabel = selectedProvider
+    ? `Use global: ${selectedProvider.name} (${selectedProvider.modelId})`
+    : selectedModel
+      ? `Use global: ${selectedModel}`
+      : 'Use global selection';
   const engineeredSendLabel = selectedProvider
     ? `Send with ${selectedProvider.name}`
     : selectedModel
@@ -47,6 +85,20 @@ export function ChatWindow() {
       : 'Send';
   const fetchOllamaModels = useAppStore(selectFetchOllamaModels);
   const [refreshingLocalModels, setRefreshingLocalModels] = useState(false);
+  const [showChatSettings, setShowChatSettings] = useState(false);
+  const hasOverrides = Boolean(
+    chatSettings.systemPrompt?.trim() ||
+      chatSettings.temperature !== null ||
+      chatSettings.maxTokens !== null ||
+      chatSettings.topP !== null ||
+      chatSettings.seed !== null ||
+      (chatSettings.stopSequences && chatSettings.stopSequences.length > 0) ||
+      chatSettings.modelOverride,
+  );
+  const modelOptions = [
+    ...ollamaModels.map((m) => ({ value: m.name, label: `Ollama: ${m.name}` })),
+    ...apiProviders.map((p) => ({ value: p.name, label: `API: ${p.name} (${p.modelId})` })),
+  ];
 
   useEffect(() => {
     // Scroll to the bottom on new message
@@ -150,6 +202,16 @@ export function ChatWindow() {
         >
           {refreshingLocalModels ? 'Refreshing…' : 'Refresh Local'}
         </Button>
+        <Button
+          size="sm"
+          variant="outline-primary"
+          onClick={() => setShowChatSettings(true)}
+        >
+          Chat Settings
+        </Button>
+        {hasOverrides && (
+          <span className="badge bg-info text-dark">Overrides</span>
+        )}
         <span className={`badge ${rag.enabled ? 'bg-success' : 'bg-secondary'}`}>
           {rag.enabled ? 'RAG On' : 'RAG Off'}
         </span>
@@ -199,6 +261,17 @@ export function ChatWindow() {
         )}
         <div ref={bottomRef} />
       </div>
+      <ChatSettingsModal
+        show={showChatSettings}
+        onHide={() => setShowChatSettings(false)}
+        settings={chatSettings}
+        modelOptions={modelOptions}
+        globalModelLabel={globalModelLabel}
+        onSave={(settings) => {
+          if (!currentChatId) return;
+          updateChatSettings(currentChatId, settings);
+        }}
+      />
     </div>
   );
 }

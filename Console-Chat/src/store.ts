@@ -1,6 +1,6 @@
 ﻿import {create} from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { ChatSession, Folder, ChatMessage, RagResult, ImageAttachment } from './llm/types';
+import { ChatSession, Folder, ChatMessage, RagResult, ImageAttachment, ChatSettings } from './llm/types';
 import { v4 as uuidv4 } from 'uuid';
 
 export type ThemeMode = 'light' | 'dark';
@@ -62,7 +62,17 @@ export interface RagSettings {
   lastIndexedAt: number | null;
 }
 
-interface AppState {
+const defaultChatSettings: ChatSettings = {
+  systemPrompt: '',
+  temperature: null,
+  maxTokens: null,
+  topP: null,
+  seed: null,
+  stopSequences: [],
+  modelOverride: null,
+};
+
+export interface AppState {
   settings: {
     providers: ApiProvider[];
   };
@@ -97,6 +107,7 @@ interface AppState {
   appendLastMessage: (chunk: string) => void;
   setSelectedModel: (model: string) => void;
   setStreaming: (isStreaming: boolean) => void;
+  updateChatSettings: (chatId: string, settings: Partial<ChatSettings>) => void;
   saveState: () => void;
   setRagEnabled: (enabled: boolean) => void;
   setRagEmbeddingModel: (model: string) => void;
@@ -185,7 +196,13 @@ export const useAppStore = create<AppState>()(
           }
 
           state.folders = data.folders || [];
-          state.chats = data.chats || [];
+          state.chats = (data.chats || []).map((chat: ChatSession) => ({
+            ...chat,
+            settings: {
+              ...defaultChatSettings,
+              ...(chat.settings || {}),
+            },
+          }));
           if (state.chats.length > 0 && !state.currentChatId) {
             state.currentChatId = state.chats.sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
           }
@@ -412,6 +429,7 @@ export const useAppStore = create<AppState>()(
             createdAt: Date.now(),
             updatedAt: Date.now(),
             modelUsed: state.selectedModel || undefined,
+            settings: { ...defaultChatSettings },
           });
           state.currentChatId = newId;
         });
@@ -452,6 +470,9 @@ export const useAppStore = create<AppState>()(
       sendMessage: async (content, role = 'user', images = []) => {
         const { selectedModel, chats, currentChatId, settings } = get();
         let targetChatId = currentChatId;
+        const activeChat = chats.find((c) => c.id === targetChatId);
+        const chatSettings = activeChat?.settings || defaultChatSettings;
+        const modelToUse = chatSettings.modelOverride || selectedModel;
 
         if (!targetChatId) {
           const newId = uuidv4();
@@ -494,12 +515,21 @@ export const useAppStore = create<AppState>()(
             }
           });
 
-          const apiProvider = settings.providers.find((p) => p.name === selectedModel);
+          const apiProvider = settings.providers.find((p) => p.name === modelToUse);
           const currentMessages = get().chats.find((c) => c.id === targetChatId)?.messages || [];
           const historyToSend = currentMessages.slice(0, -1);
           const rag = get().rag;
           let ragContext: string | null = null;
           let ragResults: RagResult[] = [];
+          const systemPrompt = chatSettings.systemPrompt?.trim() || null;
+          const temperature = chatSettings.temperature;
+          const maxTokens = chatSettings.maxTokens;
+          const topP = chatSettings.topP;
+          const seed = chatSettings.seed;
+          const stopSequences =
+            Array.isArray(chatSettings.stopSequences) && chatSettings.stopSequences.length > 0
+              ? chatSettings.stopSequences
+              : null;
 
           if (rag.enabled && rag.sources.length > 0) {
             try {
@@ -534,8 +564,15 @@ export const useAppStore = create<AppState>()(
             });
           }
 
-          const baseMessages = ragContext
-            ? [{ role: 'system', content: ragContext } as ChatMessage, ...historyToSend]
+          const systemMessages: ChatMessage[] = [];
+          if (systemPrompt) {
+            systemMessages.push({ role: 'system', content: systemPrompt, timestamp: Date.now() });
+          }
+          if (ragContext) {
+            systemMessages.push({ role: 'system', content: ragContext, timestamp: Date.now() });
+          }
+          const baseMessages = systemMessages.length > 0
+            ? [...systemMessages, ...historyToSend]
             : historyToSend;
 
           const toOllamaMessages = (messages: ChatMessage[]) =>
@@ -567,12 +604,14 @@ export const useAppStore = create<AppState>()(
             window.electronAPI.streamMessage({
               type: 'api',
               config: { baseUrl: apiProvider.baseUrl, apiKey: apiProvider.apiKey, model: apiProvider.modelId },
+              options: { temperature, maxTokens, topP, seed, stopSequences },
               messages: toApiMessages(baseMessages),
             });
           } else {
             window.electronAPI.streamMessage({
               type: 'ollama',
-              model: selectedModel,
+              model: modelToUse,
+              options: { temperature, maxTokens, topP, seed, stopSequences },
               messages: toOllamaMessages(baseMessages),
             });
           }
@@ -608,6 +647,20 @@ export const useAppStore = create<AppState>()(
         if (!isStreaming) {
           persist();
         }
+      },
+
+      updateChatSettings: (chatId, settingsUpdate) => {
+        set((state) => {
+          const chat = state.chats.find((c) => c.id === chatId);
+          if (chat) {
+            chat.settings = {
+              ...defaultChatSettings,
+              ...(chat.settings || {}),
+              ...settingsUpdate,
+            };
+          }
+        });
+        persist();
       },
     } as AppState;
   }),

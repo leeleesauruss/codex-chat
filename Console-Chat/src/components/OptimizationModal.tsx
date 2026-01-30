@@ -11,11 +11,10 @@ interface OptimizationModalProps {
 export function OptimizationModal({ show, onHide }: OptimizationModalProps) {
   const [method, setMethod] = useState<'grid_search' | 'bayesian_optimization'>('grid_search');
   const [metric, setMetric] = useState<'accuracy' | 'f1_score'>('f1_score');
-  const [templateType, setTemplateType] = useState<'prompt' | 'few-shot'>('few-shot');
-  
-  const [lrRange, setLrRange] = useState<[number, number]>([0.0001, 0.1]);
-  const [batchRange, setBatchRange] = useState<[number, number]>([16, 128]);
-  const [epochRange, setEpochRange] = useState<[number, number]>([10, 100]);
+  const templateType: OptimizationConfig['templateType'] = 'few-shot';
+  const lrRange: OptimizationConfig['parameterRanges']['learningRate'] = [0.0001, 0.1];
+  const batchRange: OptimizationConfig['parameterRanges']['batchSize'] = [16, 128];
+  const epochRange: OptimizationConfig['parameterRanges']['epochs'] = [10, 100];
   
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<OptimizationResult | null>(null);
@@ -58,7 +57,10 @@ export function OptimizationModal({ show, onHide }: OptimizationModalProps) {
             <Col>
               <Form.Group>
                 <Form.Label>Optimization Method</Form.Label>
-                <Form.Select value={method} onChange={(e) => setMethod(e.target.value as any)}>
+                <Form.Select
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value as OptimizationConfig['method'])}
+                >
                   <option value="grid_search">Grid Search</option>
                   <option value="bayesian_optimization">Bayesian Optimization (Mock)</option>
                 </Form.Select>
@@ -67,7 +69,10 @@ export function OptimizationModal({ show, onHide }: OptimizationModalProps) {
             <Col>
               <Form.Group>
                 <Form.Label>Metric</Form.Label>
-                <Form.Select value={metric} onChange={(e) => setMetric(e.target.value as any)}>
+                <Form.Select
+                  value={metric}
+                  onChange={(e) => setMetric(e.target.value as OptimizationConfig['metric'])}
+                >
                   <option value="f1_score">F1-Score</option>
                   <option value="accuracy">Accuracy</option>
                 </Form.Select>

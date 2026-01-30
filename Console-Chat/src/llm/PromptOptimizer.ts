@@ -40,7 +40,7 @@ export class PromptOptimizer {
               regularization: 0.001 // Fixed for simple grid demo
             };
 
-            const score = await this.evaluateModel(params, config.metric);
+            const score = await this.evaluateModel(params);
             history.push({ params, score });
 
             if (score > bestScore) {
@@ -51,14 +51,25 @@ export class PromptOptimizer {
       }
     }
 
+    if (!bestParams) {
+      bestParams = {
+        learningRate: config.parameterRanges.learningRate[0],
+        batchSize: config.parameterRanges.batchSize[0],
+        epochs: config.parameterRanges.epochs[0],
+        regularization: 0.001,
+      };
+      bestScore = 0;
+    }
+
     return {
-      bestParameters: bestParams!,
+      bestParameters: bestParams,
       bestMetricScore: bestScore,
-      history
+      history,
     };
   }
 
-  private async performBayesianOptimization(config: OptimizationConfig): Promise<OptimizationResult> {
+  private async performBayesianOptimization(_config: OptimizationConfig): Promise<OptimizationResult> {
+    void _config;
     // Mock implementation of Bayesian Optimization
     // In a real scenario, this would use a Gaussian Process surrogate model.
     const mockBestParams: Hyperparameters = {
@@ -78,7 +89,7 @@ export class PromptOptimizer {
   /**
    * Simulates model evaluation to return a metric (Accuracy or F1-Score).
    */
-  private async evaluateModel(params: Hyperparameters, metric: string): Promise<number> {
+  private async evaluateModel(params: Hyperparameters): Promise<number> {
     // Simulate training delay
     await new Promise(resolve => setTimeout(resolve, 10));
 

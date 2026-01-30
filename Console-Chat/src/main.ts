@@ -1,7 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import pdf from 'pdf-parse';
 import Store from 'electron-store';
 import started from 'electron-squirrel-startup';
 
@@ -13,6 +12,63 @@ if (started) {
 // Initialize electron-store
 const store = new Store();
 const RAG_INDEX_KEY = 'ragIndex';
+
+interface RagIndexEntry {
+  id: string;
+  sourcePath: string;
+  chunkIndex: number;
+  content: string;
+  embedding: number[];
+}
+
+interface RagIndex {
+  entries: RagIndexEntry[];
+  indexedAt: number | null;
+  embeddingModel: string | null;
+}
+
+interface RagSourcePayload {
+  path: string;
+  id?: string;
+  type?: 'file' | 'folder';
+  addedAt?: number;
+}
+
+interface RagIndexPayload {
+  sources: RagSourcePayload[];
+  embeddingModel: string;
+}
+
+interface RagQueryPayload {
+  query: string;
+  topK?: number;
+  embeddingModel?: string;
+}
+
+interface StreamOptions {
+  temperature?: number | null;
+  maxTokens?: number | null;
+  topP?: number | null;
+  seed?: number | null;
+  stopSequences?: string[] | null;
+}
+
+interface ApiProviderConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+interface StreamMessagePayload {
+  type: 'ollama' | 'api';
+  model?: string | null;
+  messages: unknown[];
+  config?: ApiProviderConfig;
+  options?: StreamOptions;
+}
+
+type PdfParseResult = { text?: string };
+type PdfParseFn = (input: Buffer) => Promise<PdfParseResult>;
 
 const createWindow = () => {
   // Create the browser window.
@@ -214,7 +270,7 @@ const createWindow = () => {
   });
 
   ipcMain.handle('rag-index-info', () => {
-    const existing = store.get(RAG_INDEX_KEY, null) as any;
+    const existing = store.get(RAG_INDEX_KEY) as RagIndex | undefined;
     if (!existing || !Array.isArray(existing.entries)) {
       return { count: 0, indexedAt: null, embeddingModel: null };
     }
@@ -226,12 +282,12 @@ const createWindow = () => {
   });
 
   ipcMain.handle('rag-clear-index', () => {
-    store.set(RAG_INDEX_KEY, { entries: [], indexedAt: null, embeddingModel: null });
+    store.set(RAG_INDEX_KEY, { entries: [], indexedAt: null, embeddingModel: null } as RagIndex);
     return { count: 0, indexedAt: null };
   });
 
   ipcMain.handle('rag-index', async (_event, payload) => {
-    const { sources, embeddingModel } = payload || {};
+    const { sources, embeddingModel } = (payload || {}) as Partial<RagIndexPayload>;
     if (!embeddingModel) {
       return { error: 'Missing embedding model.' };
     }
@@ -245,13 +301,7 @@ const createWindow = () => {
       await collectFiles(source.path, files);
     }
 
-    const entries: Array<{
-      id: string;
-      sourcePath: string;
-      chunkIndex: number;
-      content: string;
-      embedding: number[];
-    }> = [];
+    const entries: RagIndexEntry[] = [];
 
     for (const filePath of files) {
       if (entries.length >= maxChunks) break;
@@ -263,7 +313,11 @@ const createWindow = () => {
         let text = '';
         if (ext === '.pdf') {
           try {
-            const parsed = await pdf(buffer);
+            const pdfModule = await import('pdf-parse');
+            const pdfParse =
+              (pdfModule as { default?: PdfParseFn }).default ??
+              (pdfModule as unknown as PdfParseFn);
+            const parsed = await pdfParse(buffer);
             text = parsed.text || '';
           } catch (error) {
             console.warn('RAG failed to parse PDF:', filePath, error);
@@ -301,11 +355,11 @@ const createWindow = () => {
   });
 
   ipcMain.handle('rag-query', async (_event, payload) => {
-    const { query, topK, embeddingModel } = payload || {};
+    const { query, topK, embeddingModel } = (payload || {}) as Partial<RagQueryPayload>;
     if (!query) {
       return { error: 'Missing query.' };
     }
-    const existing = store.get(RAG_INDEX_KEY, null) as any;
+    const existing = store.get(RAG_INDEX_KEY) as RagIndex | undefined;
     if (!existing || !Array.isArray(existing.entries) || existing.entries.length === 0) {
       return { results: [] };
     }
@@ -317,14 +371,14 @@ const createWindow = () => {
       return { error: 'No embedding model available.' };
     }
     const queryEmbedding = await fetchOllamaEmbedding(modelToUse, query);
-    const scored = existing.entries.map((entry: any) => ({
+    const scored = existing.entries.map((entry) => ({
       sourcePath: entry.sourcePath,
       content: entry.content,
       score: cosineSimilarity(queryEmbedding, entry.embedding),
     }));
     const limit = typeof topK === 'number' && topK > 0 ? topK : 5;
     const results = scored
-      .sort((a: any, b: any) => b.score - a.score)
+      .sort((a, b) => b.score - a.score)
       .slice(0, limit);
     return { results };
   });
@@ -357,32 +411,69 @@ const createWindow = () => {
       return data.data || [];
     } catch (error) {
       console.error('Failed to fetch API models:', error);
-      return { error: error.message };
+      const message = error instanceof Error ? error.message : String(error);
+      return { error: message };
     }
   });
 
   // IPC handler for streaming chat
-  ipcMain.on('stream-message', async (event, payload) => {
-    const { type } = payload;
+  ipcMain.on('stream-message', async (_event, payload: StreamMessagePayload) => {
+    const { type, options } = payload;
     
     try {
       if (type === 'api') {
-        await handleApiStream(mainWindow, payload.config, payload.messages);
+        if (!payload.config) {
+          throw new Error('Missing API config for stream.');
+        }
+        await handleApiStream(mainWindow, payload.config, payload.messages, options);
       } else {
         // Default to Ollama
-        await handleOllamaStream(mainWindow, payload.model, payload.messages);
+        await handleOllamaStream(mainWindow, payload.model, payload.messages, options);
       }
     } catch (error) {
        console.error('Stream handler failed:', error);
-       mainWindow.webContents.send('stream-error', error.message);
+       const message = error instanceof Error ? error.message : String(error);
+       mainWindow.webContents.send('stream-error', message);
     }
   });
 
-  async function handleOllamaStream(window, model, messages) {
+  async function handleOllamaStream(
+    window: BrowserWindow,
+    model: string | null | undefined,
+    messages: unknown[],
+    options?: StreamOptions,
+  ) {
+      if (!model) {
+        throw new Error('Missing Ollama model.');
+      }
+      const ollamaOptions: Record<string, unknown> = {};
+      if (options?.temperature !== null && options?.temperature !== undefined) {
+        ollamaOptions.temperature = options.temperature;
+      }
+      if (options?.maxTokens !== null && options?.maxTokens !== undefined) {
+        ollamaOptions.num_predict = options.maxTokens;
+      }
+      if (options?.topP !== null && options?.topP !== undefined) {
+        ollamaOptions.top_p = options.topP;
+      }
+      if (options?.seed !== null && options?.seed !== undefined) {
+        ollamaOptions.seed = options.seed;
+      }
+      if (Array.isArray(options?.stopSequences) && options.stopSequences.length > 0) {
+        ollamaOptions.stop = options.stopSequences;
+      }
+      const payload: { model: string; messages: unknown[]; stream: true; options?: Record<string, unknown> } = {
+        model,
+        messages,
+        stream: true,
+      };
+      if (Object.keys(ollamaOptions).length > 0) {
+        payload.options = ollamaOptions;
+      }
       const response = await fetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages, stream: true }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -412,15 +503,45 @@ const createWindow = () => {
       }
   }
 
-  async function handleApiStream(window, config, messages) {
+  async function handleApiStream(
+    window: BrowserWindow,
+    config: ApiProviderConfig,
+    messages: unknown[],
+    options?: StreamOptions,
+  ) {
       const { baseUrl, apiKey, model } = config;
+      const payload: {
+        model: string;
+        messages: unknown[];
+        stream: true;
+        temperature?: number;
+        max_tokens?: number;
+        top_p?: number;
+        seed?: number;
+        stop?: string[];
+      } = { model, messages, stream: true };
+      if (options?.temperature !== null && options?.temperature !== undefined) {
+        payload.temperature = options.temperature;
+      }
+      if (options?.maxTokens !== null && options?.maxTokens !== undefined) {
+        payload.max_tokens = options.maxTokens;
+      }
+      if (options?.topP !== null && options?.topP !== undefined) {
+        payload.top_p = options.topP;
+      }
+      if (options?.seed !== null && options?.seed !== undefined) {
+        payload.seed = options.seed;
+      }
+      if (Array.isArray(options?.stopSequences) && options.stopSequences.length > 0) {
+        payload.stop = options.stopSequences;
+      }
       const response = await fetch(baseUrl, {
           method: 'POST',
           headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${apiKey}`
           },
-          body: JSON.stringify({ model, messages, stream: true })
+          body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
