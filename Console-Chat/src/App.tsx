@@ -6,6 +6,7 @@ import { OptimizationModal } from './components/OptimizationModal';
 import { ChatWindow } from './components/ChatWindow';
 import { ChatInput } from './components/ChatInput';
 import { ThemeBrowserModal } from './components/ThemeBrowserModal';
+import { RagModal } from './components/RagModal';
 import { useAppStore } from './store';
 
 const themeCssCache = new Map<string, string>();
@@ -14,14 +15,18 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showOptimization, setShowOptimization] = useState(false);
   const [showThemeBrowser, setShowThemeBrowser] = useState(false);
+  const [showRag, setShowRag] = useState(false);
   // Subscribe only to theme changes; avoid re-rendering App for every streaming chunk.
   const themeMode = useAppStore((state) => state.themeMode);
   const selectedTheme = useAppStore((state) => state.selectedTheme);
   const themeStyleRef = useRef<HTMLStyleElement | null>(null);
 
-  // Load persisted settings and wire stream listeners once.
+  const fetchOllamaModels = useAppStore((state) => state.fetchOllamaModels);
+
+  // Load persisted settings, Ollama model list, and wire stream listeners once.
   useEffect(() => {
     useAppStore.getState().loadSettings();
+    fetchOllamaModels();
 
     const offChunk = window.electronAPI.onStreamChunk((chunk) => {
       useAppStore.getState().appendLastMessage(chunk);
@@ -38,7 +43,7 @@ function App() {
       if (typeof offEnd === 'function') offEnd();
       if (typeof offError === 'function') offError();
     };
-  }, []);
+  }, [fetchOllamaModels]);
 
   // React to theme changes without re-loading settings.
   useEffect(() => {
@@ -137,6 +142,7 @@ function App() {
               onShowSettings={() => setShowSettings(true)} 
               onShowOptimization={() => setShowOptimization(true)}
               onShowThemeBrowser={() => setShowThemeBrowser(true)}
+              onShowRag={() => setShowRag(true)}
             />
           </Col>
 
@@ -156,6 +162,7 @@ function App() {
       <SettingsModal show={showSettings} onHide={() => setShowSettings(false)} />
       <OptimizationModal show={showOptimization} onHide={() => setShowOptimization(false)} />
       <ThemeBrowserModal show={showThemeBrowser} onHide={() => setShowThemeBrowser(false)} />
+      <RagModal show={showRag} onHide={() => setShowRag(false)} />
     </>
   );
 }

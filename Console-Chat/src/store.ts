@@ -1,6 +1,6 @@
 ﻿import {create} from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { ChatSession, Folder, ChatMessage } from './llm/types';
+import { ChatSession, Folder, ChatMessage, RagResult, ImageAttachment } from './llm/types';
 import { v4 as uuidv4 } from 'uuid';
 
 export type ThemeMode = 'light' | 'dark';
@@ -46,11 +46,28 @@ export interface OllamaModel {
   size: number;
 }
 
+export interface RagSource {
+  id: string;
+  path: string;
+  type: 'file' | 'folder';
+  addedAt: number;
+}
+
+export interface RagSettings {
+  enabled: boolean;
+  embeddingModel: string;
+  topK: number;
+  sources: RagSource[];
+  indexedCount: number;
+  lastIndexedAt: number | null;
+}
+
 interface AppState {
   settings: {
     providers: ApiProvider[];
   };
   ollamaModels: OllamaModel[];
+  rag: RagSettings;
   folders: Folder[];
   chats: ChatSession[];
   currentChatId: string | null;
@@ -75,24 +92,33 @@ interface AppState {
   renameChat: (id: string, title: string) => void;
   moveChat: (chatId: string, folderId: string | null) => void;
   selectChat: (id: string) => void;
-  sendMessage: (content: string, role?: 'user' | 'assistant') => void;
+  sendMessage: (content: string, role?: 'user' | 'assistant', images?: ImageAttachment[]) => Promise<void>;
   addMessage: (message: ChatMessage) => void;
   appendLastMessage: (chunk: string) => void;
   setSelectedModel: (model: string) => void;
   setStreaming: (isStreaming: boolean) => void;
   saveState: () => void;
+  setRagEnabled: (enabled: boolean) => void;
+  setRagEmbeddingModel: (model: string) => void;
+  setRagTopK: (topK: number) => void;
+  addRagSources: (sources: RagSource[]) => void;
+  removeRagSource: (id: string) => void;
+  clearRagSources: () => void;
+  refreshRagIndexInfo: () => Promise<void>;
+  indexRagSources: () => Promise<{ count: number; indexedAt: number | null } | { error: string }>;
 }
 
 export const useAppStore = create<AppState>()(
   immer((set, get) => {
     const persist = () => {
-      const { settings, themeMode, selectedTheme, folders, chats } = get();
+      const { settings, themeMode, selectedTheme, folders, chats, rag } = get();
       window.electronAPI.saveSettings({
         settings,
         theme: {
           mode: themeMode,
           selectedTheme,
         },
+        rag,
         folders,
         chats,
       });
@@ -101,6 +127,14 @@ export const useAppStore = create<AppState>()(
     return {
       settings: { providers: [] },
       ollamaModels: [],
+      rag: {
+        enabled: false,
+        embeddingModel: 'nomic-embed-text',
+        topK: 5,
+        sources: [],
+        indexedCount: 0,
+        lastIndexedAt: null,
+      },
       folders: [],
       chats: [],
       currentChatId: null,
@@ -113,6 +147,16 @@ export const useAppStore = create<AppState>()(
         const data = await window.electronAPI.getSettings();
         set((state) => {
           state.settings = data.settings || { providers: [] };
+          if (data.rag) {
+            state.rag = {
+              enabled: data.rag.enabled ?? state.rag.enabled,
+              embeddingModel: data.rag.embeddingModel || state.rag.embeddingModel,
+              topK: data.rag.topK || state.rag.topK,
+              sources: Array.isArray(data.rag.sources) ? data.rag.sources : state.rag.sources,
+              indexedCount: data.rag.indexedCount ?? state.rag.indexedCount,
+              lastIndexedAt: data.rag.lastIndexedAt ?? state.rag.lastIndexedAt,
+            };
+          }
 
           const storedTheme = data.theme;
           if (typeof storedTheme === 'string') {
@@ -223,6 +267,82 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      setRagEnabled: (enabled) => {
+        set((state) => {
+          state.rag.enabled = enabled;
+        });
+        persist();
+      },
+
+      setRagEmbeddingModel: (model) => {
+        set((state) => {
+          state.rag.embeddingModel = model;
+        });
+        persist();
+      },
+
+      setRagTopK: (topK) => {
+        set((state) => {
+          state.rag.topK = topK;
+        });
+        persist();
+      },
+
+      addRagSources: (sources) => {
+        set((state) => {
+          const existing = new Set(state.rag.sources.map((s) => s.path));
+          sources.forEach((source) => {
+            if (!existing.has(source.path)) {
+              state.rag.sources.push(source);
+              existing.add(source.path);
+            }
+          });
+        });
+        persist();
+      },
+
+      removeRagSource: (id) => {
+        set((state) => {
+          state.rag.sources = state.rag.sources.filter((s) => s.id !== id);
+        });
+        persist();
+      },
+
+      clearRagSources: () => {
+        set((state) => {
+          state.rag.sources = [];
+        });
+        persist();
+      },
+
+      refreshRagIndexInfo: async () => {
+        const info = await window.electronAPI.getRagIndexInfo();
+        set((state) => {
+          state.rag.indexedCount = info.count || 0;
+          state.rag.lastIndexedAt = info.indexedAt || null;
+          if (info.embeddingModel) {
+            state.rag.embeddingModel = info.embeddingModel;
+          }
+        });
+      },
+
+      indexRagSources: async () => {
+        const { rag } = get();
+        const result = await window.electronAPI.buildRagIndex({
+          sources: rag.sources,
+          embeddingModel: rag.embeddingModel,
+        });
+        if ('error' in result) {
+          return result;
+        }
+        set((state) => {
+          state.rag.indexedCount = result.count || 0;
+          state.rag.lastIndexedAt = result.indexedAt || null;
+        });
+        persist();
+        return result;
+      },
+
       updateProvider: (provider) => {
         set((state) => {
           const index = state.settings.providers.findIndex((p) => p.id === provider.id);
@@ -329,7 +449,7 @@ export const useAppStore = create<AppState>()(
         set({ currentChatId: id });
       },
 
-      sendMessage: (content, role = 'user') => {
+      sendMessage: async (content, role = 'user', images = []) => {
         const { selectedModel, chats, currentChatId, settings } = get();
         let targetChatId = currentChatId;
 
@@ -354,6 +474,7 @@ export const useAppStore = create<AppState>()(
           role,
           content,
           timestamp: Date.now(),
+          ...(images.length ? { images } : {}),
         };
 
         set((state) => {
@@ -375,19 +496,84 @@ export const useAppStore = create<AppState>()(
 
           const apiProvider = settings.providers.find((p) => p.name === selectedModel);
           const currentMessages = get().chats.find((c) => c.id === targetChatId)?.messages || [];
-          const historyToSend = currentMessages.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
+          const historyToSend = currentMessages.slice(0, -1);
+          const rag = get().rag;
+          let ragContext: string | null = null;
+          let ragResults: RagResult[] = [];
+
+          if (rag.enabled && rag.sources.length > 0) {
+            try {
+              const result = await window.electronAPI.queryRag({
+                query: content,
+                topK: rag.topK,
+                embeddingModel: rag.embeddingModel,
+              });
+              if (!('error' in result) && Array.isArray(result.results) && result.results.length > 0) {
+                ragResults = result.results as RagResult[];
+                const snippets = ragResults
+                  .map((item, index) => `Source ${index + 1}: ${item.sourcePath}\n${item.content}`)
+                  .join('\n\n');
+                ragContext = `Use the following context snippets when answering. If relevant, cite the source paths.\n\n${snippets}`;
+              } else if ('error' in result) {
+                console.warn('RAG query error:', result.error);
+              }
+            } catch (error) {
+              console.warn('RAG query failed:', error);
+            }
+          }
+
+          if (ragResults.length > 0) {
+            set((state) => {
+              const chat = state.chats.find((c) => c.id === targetChatId);
+              if (chat) {
+                const lastMsg = chat.messages[chat.messages.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  lastMsg.sources = ragResults;
+                }
+              }
+            });
+          }
+
+          const baseMessages = ragContext
+            ? [{ role: 'system', content: ragContext } as ChatMessage, ...historyToSend]
+            : historyToSend;
+
+          const toOllamaMessages = (messages: ChatMessage[]) =>
+            messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+              ...(m.images?.length
+                ? { images: m.images.map((img) => img.data) }
+                : {}),
+            }));
+
+          const toApiMessages = (messages: ChatMessage[]) =>
+            messages.map((m) => {
+              if (m.images && m.images.length > 0) {
+                const parts = [];
+                if (m.content?.trim()) {
+                  parts.push({ type: 'text', text: m.content });
+                }
+                m.images.forEach((img) => {
+                  const url = img.dataUrl || `data:${img.mimeType};base64,${img.data}`;
+                  parts.push({ type: 'image_url', image_url: { url } });
+                });
+                return { role: m.role, content: parts };
+              }
+              return { role: m.role, content: m.content };
+            });
 
           if (apiProvider) {
             window.electronAPI.streamMessage({
               type: 'api',
               config: { baseUrl: apiProvider.baseUrl, apiKey: apiProvider.apiKey, model: apiProvider.modelId },
-              messages: historyToSend,
+              messages: toApiMessages(baseMessages),
             });
           } else {
             window.electronAPI.streamMessage({
               type: 'ollama',
               model: selectedModel,
-              messages: historyToSend,
+              messages: toOllamaMessages(baseMessages),
             });
           }
         }
@@ -396,7 +582,7 @@ export const useAppStore = create<AppState>()(
       },
 
       addMessage: (message) => {
-        get().sendMessage(message.content, message.role);
+        get().sendMessage(message.content, message.role, message.images);
       },
 
       appendLastMessage: (chunk) => {

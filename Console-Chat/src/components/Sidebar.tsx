@@ -7,9 +7,10 @@ interface SidebarProps {
   onShowSettings: () => void;
   onShowOptimization: () => void;
   onShowThemeBrowser: () => void;
+  onShowRag: () => void;
 }
 
-export function Sidebar({ onShowSettings, onShowOptimization, onShowThemeBrowser }: SidebarProps) {
+export function Sidebar({ onShowSettings, onShowOptimization, onShowThemeBrowser, onShowRag }: SidebarProps) {
   const { 
     folders, 
     chats, 
@@ -132,6 +133,7 @@ export function Sidebar({ onShowSettings, onShowOptimization, onShowThemeBrowser
       <div className="d-grid gap-2">
          <Button variant="outline-primary" size="sm" onClick={onShowOptimization}>Optimization</Button>
          <Button variant="secondary" size="sm" onClick={onShowSettings}>API Settings</Button>
+         <Button variant="outline-success" size="sm" onClick={onShowRag}>RAG Context</Button>
          <Button variant="outline-info" size="sm" onClick={onShowThemeBrowser}>Theme Catalog</Button>
          <Button variant="outline-secondary" size="sm" onClick={toggleTheme}>Toggle Theme</Button>
       </div>

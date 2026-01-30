@@ -1,5 +1,7 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs/promises';
+import pdf from 'pdf-parse';
 import Store from 'electron-store';
 import started from 'electron-squirrel-startup';
 
@@ -10,6 +12,7 @@ if (started) {
 
 // Initialize electron-store
 const store = new Store();
+const RAG_INDEX_KEY = 'ragIndex';
 
 const createWindow = () => {
   // Create the browser window.
@@ -33,17 +36,297 @@ const createWindow = () => {
   
   // IPC handler to list local ollama models
   ipcMain.handle('list-ollama-models', async () => {
-    try {
-      const response = await fetch('http://localhost:11434/api/tags');
-      if (!response.ok) {
-        throw new Error(`Ollama API responded with status ${response.status}`);
+    const endpoints = [
+      'http://localhost:11434/api/tags',   // documented list endpoint
+      'http://localhost:11434/api/models', // fallback for older/newer variants
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          // Try next endpoint on 404; otherwise surface the status.
+          if (response.status === 404) continue;
+          throw new Error(`Ollama API responded with status ${response.status} for ${url}`);
+        }
+
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          return data;
+        }
+        if (Array.isArray(data.models)) {
+          return data.models;
+        }
+        if (Array.isArray(data.data)) {
+          return data.data;
+        }
+        // Unexpected shape—continue to next endpoint.
+      } catch (error) {
+        console.error(`Failed to fetch Ollama models from ${url}:`, error);
+        // If this was the last endpoint, report the error; otherwise, keep trying.
+        if (url === endpoints[endpoints.length - 1]) {
+          return { error: (error as Error).message };
+        }
       }
-      const data = await response.json();
-      return data.models || [];
-    } catch (error) {
-      console.error('Failed to fetch Ollama models:', error);
-      return { error: error.message }; // Send error info to renderer
     }
+
+    // If all attempts fail, return an error object.
+    return { error: 'Could not retrieve Ollama models from localhost:11434' };
+  });
+
+  const allowedExtensions = new Set([
+    '.txt',
+    '.md',
+    '.mdx',
+    '.json',
+    '.yaml',
+    '.yml',
+    '.toml',
+    '.ini',
+    '.xml',
+    '.html',
+    '.css',
+    '.js',
+    '.jsx',
+    '.ts',
+    '.tsx',
+    '.py',
+    '.pdf',
+    '.java',
+    '.cs',
+    '.cpp',
+    '.c',
+    '.go',
+    '.rs',
+    '.sql',
+  ]);
+  const ignoredFolders = new Set([
+    'node_modules',
+    '.git',
+    '.hg',
+    '.svn',
+    'dist',
+    'build',
+    'out',
+    '.vite',
+  ]);
+  const maxFileBytes = 2 * 1024 * 1024; // 2 MB
+  const maxChunks = 500;
+  const chunkSize = 1000;
+  const chunkOverlap = 200;
+
+  const isBinaryBuffer = (buffer: Buffer) => buffer.includes(0);
+
+  const chunkText = (text: string) => {
+    const cleaned = text.replace(/\r\n/g, '\n').trim();
+    const chunks: string[] = [];
+    if (!cleaned) return chunks;
+    let start = 0;
+    while (start < cleaned.length) {
+      const end = Math.min(start + chunkSize, cleaned.length);
+      const chunk = cleaned.slice(start, end).trim();
+      if (chunk) chunks.push(chunk);
+      if (end >= cleaned.length) break;
+      start = Math.max(0, end - chunkOverlap);
+      if (chunks.length >= maxChunks) break;
+    }
+    return chunks;
+  };
+
+  const collectFiles = async (entryPath: string, results: string[]) => {
+    try {
+      const stat = await fs.stat(entryPath);
+      if (stat.isDirectory()) {
+        const dirName = path.basename(entryPath);
+        if (ignoredFolders.has(dirName)) return;
+        const entries = await fs.readdir(entryPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(entryPath, entry.name);
+          if (entry.isDirectory()) {
+            if (!ignoredFolders.has(entry.name)) {
+              await collectFiles(fullPath, results);
+            }
+          } else if (entry.isFile()) {
+            if (allowedExtensions.has(path.extname(entry.name).toLowerCase())) {
+              results.push(fullPath);
+            }
+          }
+        }
+      } else if (stat.isFile()) {
+        if (allowedExtensions.has(path.extname(entryPath).toLowerCase())) {
+          results.push(entryPath);
+        }
+      }
+    } catch (error) {
+      console.warn('RAG collectFiles error:', error);
+    }
+  };
+
+  const fetchOllamaEmbedding = async (model: string, prompt: string) => {
+    const response = await fetch('http://localhost:11434/api/embeddings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, prompt }),
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Ollama embeddings error (${response.status}): ${errText}`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data.embedding)) {
+      throw new Error('Ollama embeddings response missing embedding array.');
+    }
+    return data.embedding as number[];
+  };
+
+  const cosineSimilarity = (a: number[], b: number[]) => {
+    if (!a.length || a.length !== b.length) return 0;
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i += 1) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    if (!normA || !normB) return 0;
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  };
+
+  ipcMain.handle('rag-select-files', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Documents',
+          extensions: ['txt', 'md', 'json', 'js', 'pdf', 'py', 'yaml', 'yml', 'html'],
+        },
+      ],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle('rag-select-folder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+    });
+    return result.canceled ? null : result.filePaths[0];
+  });
+
+  ipcMain.handle('rag-index-info', () => {
+    const existing = store.get(RAG_INDEX_KEY, null) as any;
+    if (!existing || !Array.isArray(existing.entries)) {
+      return { count: 0, indexedAt: null, embeddingModel: null };
+    }
+    return {
+      count: existing.entries.length,
+      indexedAt: existing.indexedAt ?? null,
+      embeddingModel: existing.embeddingModel ?? null,
+    };
+  });
+
+  ipcMain.handle('rag-clear-index', () => {
+    store.set(RAG_INDEX_KEY, { entries: [], indexedAt: null, embeddingModel: null });
+    return { count: 0, indexedAt: null };
+  });
+
+  ipcMain.handle('rag-index', async (_event, payload) => {
+    const { sources, embeddingModel } = payload || {};
+    if (!embeddingModel) {
+      return { error: 'Missing embedding model.' };
+    }
+    if (!Array.isArray(sources) || sources.length === 0) {
+      return { error: 'No sources provided.' };
+    }
+
+    const files: string[] = [];
+    for (const source of sources) {
+      if (!source?.path) continue;
+      await collectFiles(source.path, files);
+    }
+
+    const entries: Array<{
+      id: string;
+      sourcePath: string;
+      chunkIndex: number;
+      content: string;
+      embedding: number[];
+    }> = [];
+
+    for (const filePath of files) {
+      if (entries.length >= maxChunks) break;
+      try {
+        const stat = await fs.stat(filePath);
+        if (stat.size > maxFileBytes) continue;
+        const buffer = await fs.readFile(filePath);
+        const ext = path.extname(filePath).toLowerCase();
+        let text = '';
+        if (ext === '.pdf') {
+          try {
+            const parsed = await pdf(buffer);
+            text = parsed.text || '';
+          } catch (error) {
+            console.warn('RAG failed to parse PDF:', filePath, error);
+            continue;
+          }
+        } else {
+          if (isBinaryBuffer(buffer)) continue;
+          text = buffer.toString('utf8');
+        }
+        const chunks = chunkText(text);
+        for (let i = 0; i < chunks.length; i += 1) {
+          if (entries.length >= maxChunks) break;
+          const chunk = chunks[i];
+          const embedding = await fetchOllamaEmbedding(embeddingModel, chunk);
+          entries.push({
+            id: `${filePath}:${i}`,
+            sourcePath: filePath,
+            chunkIndex: i,
+            content: chunk,
+            embedding,
+          });
+        }
+      } catch (error) {
+        console.warn('RAG indexing skipped file:', filePath, error);
+      }
+    }
+
+    const index = {
+      entries,
+      indexedAt: Date.now(),
+      embeddingModel,
+    };
+    store.set(RAG_INDEX_KEY, index);
+    return { count: entries.length, indexedAt: index.indexedAt };
+  });
+
+  ipcMain.handle('rag-query', async (_event, payload) => {
+    const { query, topK, embeddingModel } = payload || {};
+    if (!query) {
+      return { error: 'Missing query.' };
+    }
+    const existing = store.get(RAG_INDEX_KEY, null) as any;
+    if (!existing || !Array.isArray(existing.entries) || existing.entries.length === 0) {
+      return { results: [] };
+    }
+    if (embeddingModel && existing.embeddingModel && embeddingModel !== existing.embeddingModel) {
+      return { error: `Embedding model mismatch (index: ${existing.embeddingModel}).` };
+    }
+    const modelToUse = embeddingModel || existing.embeddingModel;
+    if (!modelToUse) {
+      return { error: 'No embedding model available.' };
+    }
+    const queryEmbedding = await fetchOllamaEmbedding(modelToUse, query);
+    const scored = existing.entries.map((entry: any) => ({
+      sourcePath: entry.sourcePath,
+      content: entry.content,
+      score: cosineSimilarity(queryEmbedding, entry.embedding),
+    }));
+    const limit = typeof topK === 'number' && topK > 0 ? topK : 5;
+    const results = scored
+      .sort((a: any, b: any) => b.score - a.score)
+      .slice(0, limit);
+    return { results };
   });
 
   // IPC handler to fetch models from API providers

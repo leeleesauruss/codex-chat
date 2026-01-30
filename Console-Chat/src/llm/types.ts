@@ -67,6 +67,21 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  sources?: RagResult[];
+  images?: ImageAttachment[];
+}
+
+export interface RagResult {
+  sourcePath: string;
+  content: string;
+  score: number;
+}
+
+export interface ImageAttachment {
+  name: string;
+  mimeType: string;
+  data: string; // base64 without data url prefix
+  dataUrl?: string;
 }
 
 export interface ChatSession {

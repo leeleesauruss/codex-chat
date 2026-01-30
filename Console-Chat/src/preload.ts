@@ -7,6 +7,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   listOllamaModels: () => ipcRenderer.invoke('list-ollama-models'),
   fetchApiModels: (config) => ipcRenderer.invoke('fetch-api-models', config),
+  selectRagFiles: () => ipcRenderer.invoke('rag-select-files'),
+  selectRagFolder: () => ipcRenderer.invoke('rag-select-folder'),
+  buildRagIndex: (payload) => ipcRenderer.invoke('rag-index', payload),
+  clearRagIndex: () => ipcRenderer.invoke('rag-clear-index'),
+  getRagIndexInfo: () => ipcRenderer.invoke('rag-index-info'),
+  queryRag: (payload) => ipcRenderer.invoke('rag-query', payload),
   
   // Chat streaming
   streamMessage: (payload) => ipcRenderer.send('stream-message', payload),
