@@ -80,6 +80,7 @@ const createWindow = () => {
     },
   });
 
+
   // IPC handler to get settings
   ipcMain.handle('get-settings', () => {
     return store.get('settings', {}); // Return default empty object if not set

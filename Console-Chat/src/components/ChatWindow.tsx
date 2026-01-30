@@ -1,75 +1,61 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { useAppStore, AppState } from '../store';
+import React, { useEffect, useRef, useState } from 'react';
+import { useAppStore } from '../store';
 import { ChatMessage, RagResult, ImageAttachment, ChatSettings } from '../llm/types';
 import { Card, Button, Form } from 'react-bootstrap';
 import ReactMarkdown from 'react-markdown';
-import { shallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { ChatSettingsModal } from './ChatSettingsModal';
 
 const emptyMessages: ChatMessage[] = [];
 const MAX_SNIPPET_CHARS = 400;
 
-const selectCurrentChatId = (state: AppState) => state.currentChatId;
-const selectStreaming = (state: AppState) => state.streaming;
-const selectSelectedModel = (state: AppState) => state.selectedModel;
-const selectOllamaModels = (state: AppState) => state.ollamaModels;
-const selectApiProviders = (state: AppState) => state.settings.providers;
-const selectRag = (state: AppState) => state.rag;
-const selectSetSelectedModel = (state: AppState) => state.setSelectedModel;
-const selectSendMessage = (state: AppState) => state.sendMessage;
-const selectFetchOllamaModels = (state: AppState) => state.fetchOllamaModels;
-const selectUpdateChatSettings = (state: AppState) => state.updateChatSettings;
+const emptySettings: ChatSettings = {
+  systemPrompt: '',
+  temperature: null,
+  maxTokens: null,
+  topP: null,
+  seed: null,
+  stopSequences: [],
+  modelOverride: null,
+};
 
 export function ChatWindow() {
-  const currentChatId = useAppStore(selectCurrentChatId);
-  const chatSettings = useAppStore(
-    useCallback(
-      (state: AppState) => {
-        if (!currentChatId) {
-          return {
-            systemPrompt: '',
-            temperature: null,
-            maxTokens: null,
-            topP: null,
-            seed: null,
-            stopSequences: [],
-            modelOverride: null,
-          } as ChatSettings;
-        }
-        return (
-          state.chats.find((c) => c.id === currentChatId)?.settings || {
-            systemPrompt: '',
-            temperature: null,
-            maxTokens: null,
-            topP: null,
-            seed: null,
-            stopSequences: [],
-            modelOverride: null,
-          }
-        );
-      },
-      [currentChatId],
-    ),
-    shallow,
+  const {
+    currentChatId,
+    messages,
+    chatSettings,
+    streaming,
+    selectedModel,
+    ollamaModels,
+    ollamaStatus,
+    apiProviders,
+    rag,
+    setSelectedModel,
+    sendMessage,
+    fetchOllamaModels,
+    updateChatSettings,
+  } = useAppStore(
+    useShallow((state) => {
+      const chat = state.currentChatId
+        ? state.chats.find((c) => c.id === state.currentChatId)
+        : null;
+      return {
+        currentChatId: state.currentChatId,
+        messages: chat?.messages ?? emptyMessages,
+        chatSettings: chat?.settings ?? emptySettings,
+        streaming: state.streaming,
+        selectedModel: state.selectedModel,
+        ollamaModels: state.ollamaModels,
+        ollamaStatus: state.ollamaStatus,
+        apiProviders: state.settings.providers,
+        rag: state.rag,
+        setSelectedModel: state.setSelectedModel,
+        sendMessage: state.sendMessage,
+        fetchOllamaModels: state.fetchOllamaModels,
+        updateChatSettings: state.updateChatSettings,
+      };
+    }),
   );
-  const messages = useAppStore(
-    useCallback(
-      (state: AppState) => {
-        if (!currentChatId) return emptyMessages;
-        return state.chats.find((c) => c.id === currentChatId)?.messages ?? emptyMessages;
-      },
-      [currentChatId],
-    ),
-    shallow,
-  );
-  const streaming = useAppStore(selectStreaming);
-  const selectedModel = useAppStore(selectSelectedModel);
-  const ollamaModels = useAppStore(selectOllamaModels);
-  const apiProviders = useAppStore(selectApiProviders);
-  const rag = useAppStore(selectRag);
-  const setSelectedModel = useAppStore(selectSetSelectedModel);
-  const sendMessage = useAppStore(selectSendMessage);
-  const updateChatSettings = useAppStore(selectUpdateChatSettings);
   
   const bottomRef = useRef<null | HTMLDivElement>(null);
   const selectedProvider = apiProviders.find((p) => p.name === selectedModel);
@@ -83,7 +69,6 @@ export function ChatWindow() {
     : selectedModel
       ? `Send with Ollama (${selectedModel})`
       : 'Send';
-  const fetchOllamaModels = useAppStore(selectFetchOllamaModels);
   const [refreshingLocalModels, setRefreshingLocalModels] = useState(false);
   const [showChatSettings, setShowChatSettings] = useState(false);
   const hasOverrides = Boolean(
@@ -216,6 +201,14 @@ export function ChatWindow() {
           {rag.enabled ? 'RAG On' : 'RAG Off'}
         </span>
       </div>
+
+      {ollamaStatus.error && (
+        <div className="px-3 pt-2">
+          <div className="alert alert-warning py-2 mb-0">
+            Ollama offline or unreachable. Local models will be unavailable until it is running.
+          </div>
+        </div>
+      )}
 
       <div className="p-3 flex-grow-1" style={{ overflowY: 'auto' }}>
         {messages.map((msg, index) => {

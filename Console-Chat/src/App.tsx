@@ -21,12 +21,11 @@ function App() {
   const selectedTheme = useAppStore((state) => state.selectedTheme);
   const themeStyleRef = useRef<HTMLStyleElement | null>(null);
 
-  const fetchOllamaModels = useAppStore((state) => state.fetchOllamaModels);
-
   // Load persisted settings, Ollama model list, and wire stream listeners once.
   useEffect(() => {
-    useAppStore.getState().loadSettings();
-    fetchOllamaModels();
+    const store = useAppStore.getState();
+    store.loadSettings();
+    store.fetchOllamaModels();
 
     const offChunk = window.electronAPI.onStreamChunk((chunk) => {
       useAppStore.getState().appendLastMessage(chunk);
@@ -43,7 +42,7 @@ function App() {
       if (typeof offEnd === 'function') offEnd();
       if (typeof offError === 'function') offError();
     };
-  }, [fetchOllamaModels]);
+  }, []);
 
   // React to theme changes without re-loading settings.
   useEffect(() => {

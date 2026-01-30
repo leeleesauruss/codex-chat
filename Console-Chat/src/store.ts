@@ -77,6 +77,10 @@ export interface AppState {
     providers: ApiProvider[];
   };
   ollamaModels: OllamaModel[];
+  ollamaStatus: {
+    error: string | null;
+    lastChecked: number | null;
+  };
   rag: RagSettings;
   folders: Folder[];
   chats: ChatSession[];
@@ -138,6 +142,10 @@ export const useAppStore = create<AppState>()(
     return {
       settings: { providers: [] },
       ollamaModels: [],
+      ollamaStatus: {
+        error: null,
+        lastChecked: null,
+      },
       rag: {
         enabled: false,
         embeddingModel: 'nomic-embed-text',
@@ -274,10 +282,16 @@ export const useAppStore = create<AppState>()(
       fetchOllamaModels: async () => {
         const result = await window.electronAPI.listOllamaModels();
         if ('error' in result) {
-          console.error('Failed to fetch Ollama models:', result.error);
-          set({ ollamaModels: [] });
+          console.warn('Failed to fetch Ollama models:', result.error);
+          set({
+            ollamaModels: [],
+            ollamaStatus: { error: result.error, lastChecked: Date.now() },
+          });
         } else {
           set({ ollamaModels: result });
+          set({
+            ollamaStatus: { error: null, lastChecked: Date.now() },
+          });
           if (!get().selectedModel && result.length > 0) {
             set({ selectedModel: result[0].name });
           }
