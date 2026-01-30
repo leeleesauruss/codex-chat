@@ -46,14 +46,33 @@ export function ChatSettingsModal({
 
   useEffect(() => {
     if (!show) return;
-    setSystemPrompt(settings.systemPrompt || '');
-    setTemperature(settings.temperature === null || settings.temperature === undefined ? '' : String(settings.temperature));
-    setMaxTokens(settings.maxTokens === null || settings.maxTokens === undefined ? '' : String(settings.maxTokens));
-    setTopP(settings.topP === null || settings.topP === undefined ? '' : String(settings.topP));
-    setSeed(settings.seed === null || settings.seed === undefined ? '' : String(settings.seed));
-    setStopSequences((settings.stopSequences || []).join('\n'));
-    setModelOverride(settings.modelOverride || '');
-  }, [settings, show]);
+    const nextSystemPrompt = settings.systemPrompt || '';
+    const nextTemperature =
+      settings.temperature === null || settings.temperature === undefined ? '' : String(settings.temperature);
+    const nextMaxTokens =
+      settings.maxTokens === null || settings.maxTokens === undefined ? '' : String(settings.maxTokens);
+    const nextTopP = settings.topP === null || settings.topP === undefined ? '' : String(settings.topP);
+    const nextSeed = settings.seed === null || settings.seed === undefined ? '' : String(settings.seed);
+    const nextStopSequences = (settings.stopSequences || []).join('\n');
+    const nextModelOverride = settings.modelOverride || '';
+
+    setSystemPrompt((prev) => (prev === nextSystemPrompt ? prev : nextSystemPrompt));
+    setTemperature((prev) => (prev === nextTemperature ? prev : nextTemperature));
+    setMaxTokens((prev) => (prev === nextMaxTokens ? prev : nextMaxTokens));
+    setTopP((prev) => (prev === nextTopP ? prev : nextTopP));
+    setSeed((prev) => (prev === nextSeed ? prev : nextSeed));
+    setStopSequences((prev) => (prev === nextStopSequences ? prev : nextStopSequences));
+    setModelOverride((prev) => (prev === nextModelOverride ? prev : nextModelOverride));
+  }, [
+    show,
+    settings.systemPrompt,
+    settings.temperature,
+    settings.maxTokens,
+    settings.topP,
+    settings.seed,
+    settings.modelOverride,
+    settings.stopSequences,
+  ]);
 
   const handleSave = () => {
     onSave({
